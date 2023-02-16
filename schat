@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# 设置API
+API_KEY=""
+
+[[ -z $API_KEY ]] && echo -e "先设置API_KEY" && exit 1
+
+# Chat 模型参数设置
+TEMPERATURE="0.7"
+MAX_TOKENS="2048"
+MODEL="text-davinci-003"
+BEST_OF="1"
+TOP_P="1"
+FREQUENCY_PENALTY="0.81"
+PRESENCE_PENALTY="0.8"
+
+echo -e "退出输入'\033[36mq\033[0m'."
+running=true
+
+# 错误info
+Error() {
+	if echo "$1" | jq -e '.error' >/dev/null; then
+		echo -e "调整问题已获得正确回答\033[0;31m$(echo "$1" | jq -r '.error.type')\033[0m"
+		exit 1
+	fi
+}
+
+while $running; do
+	echo -e "\n问题:"
+	read -r prompt
+	if [ "$prompt" == "q" ]; then
+		exit 0
+		# 输入jp: 翻译成日语
+	elif [[ "$prompt" =~ ^jp: ]]; then
+		jp_prompt="Translate this into japanese:$prompt"
+		prompt=$(echo "$jp_prompt" | sed 's/"/\\"/g')
+		# 输入en: 翻译成英文
+	elif [[ "$prompt" =~ ^en: ]]; then
+		en_prompt="Translate this into english:$prompt"
+		prompt=$(echo "$en_prompt" | sed 's/"/\\"/g')
+		# 输入cn: 翻译成中文
+	elif [[ "$prompt" =~ ^cn: ]]; then
+		cn_prompt="Translate this into chinese:$prompt"
+		prompt=$(echo "$cn_prompt" | sed 's/"/\\"/g')
+		# 通用
+	else
+		prompt=$(echo "$prompt" | sed 's/"/\\"/g')
+	fi
+	prompt=${prompt//$'\n'/' '}
+	response=$(curl https://api.openai.com/v1/completions \
+		-sS \
+		-H 'Content-Type: application/json' \
+		-H "Authorization: Bearer $API_KEY" \
+		-d '{
+  			"model": "'"$MODEL"'",
+  			"prompt": "'"${prompt}"'",
+  			"max_tokens": '$MAX_TOKENS',
+  			"temperature": '$TEMPERATURE',
+  			"best_of": '$BEST_OF',
+  			"top_p": '$TOP_P',
+  			"frequency_penalty": '$FREQUENCY_PENALTY',
+  			"presence_penalty": '$PRESENCE_PENALTY'
+			}')
+	Error "$response"
+	response_format=$(echo "$response" | jq -r '.choices[].text' | sed '1,2d; s/^A://g')
+	echo -e "\n\033[36m回答: \033[0m${response_format}"
+done
