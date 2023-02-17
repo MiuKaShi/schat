@@ -4,9 +4,7 @@
 
 ## 安装
 
-shell 脚本，没什么依赖。
-
-直接下载编辑脚本，配置好 API key 就可食用.
+shell 脚本，直接下载编辑脚本，配置好 API key 就可食用.
 
 API key [申请地址](https://beta.openai.com/account/api-keys)
 

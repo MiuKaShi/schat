@@ -5,6 +5,20 @@ API_KEY=""
 
 [[ -z $API_KEY ]] && echo -e "先设置API_KEY" && exit 1
 
+# 安装jq包
+if ! which jq >/dev/null 2>&1; then
+	echo -e "先安装jq包"
+	if which brew >/dev/null 2>&1; then
+		brew install jq
+	elif which pacman1 >/dev/null 2>&1; then
+		sudo pacman -S jq
+	elif which apt >/dev/null 2>&1; then
+		sudo apt install jq
+	else
+		echo -e "自动安装失败，需手动安装jq" && exit 1
+	fi
+fi
+
 # Chat 模型参数设置
 TEMPERATURE="0.7"
 MAX_TOKENS="2048"
