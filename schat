@@ -1,81 +1,76 @@
 #!/bin/bash
 
+# 包依赖 jq bat
+
 # 设置API
+URL="https://api.openai.com/v1/chat/completions"
 API_KEY=""
+ENGINE="gpt-3.5-turbo"
 
-[[ -z $API_KEY ]] && echo -e "先设置API_KEY" && exit 1
-
-# 安装jq包
-if ! which jq >/dev/null 2>&1; then
-	echo -e "先安装jq包"
-	if which brew >/dev/null 2>&1; then
-		brew install jq
-	elif which pacman1 >/dev/null 2>&1; then
-		sudo pacman -S jq
-	elif which apt >/dev/null 2>&1; then
-		sudo apt install jq
-	else
-		echo -e "自动安装失败，需手动安装jq" && exit 1
-	fi
-fi
+[[ -z $API_KEY ]] && echo -e "Set your API_KEY" && exit 1
 
 # Chat 模型参数设置
 TEMPERATURE="0.7"
-MAX_TOKENS="2048"
-MODEL="text-davinci-003"
-BEST_OF="1"
 TOP_P="1"
 FREQUENCY_PENALTY="0.81"
 PRESENCE_PENALTY="0.8"
 
-echo -e "退出输入'\033[36mq\033[0m'."
+echo -e "Exit with \033[36mq\033[0m."
 running=true
 
 # 错误info
 Error() {
-	if echo "$1" | jq -e '.error' >/dev/null; then
-		echo -e "调整问题已获得正确回答\033[0;31m$(echo "$1" | jq -r '.error.type')\033[0m"
-		exit 1
-	fi
+    if echo "$1" | jq -e '.error' >/dev/null; then
+        echo -e "Error, you can try again\033[0;31m$(echo "$1" | jq -r '.error.type')\033[0m"
+        exit 1
+    fi
 }
 
+gptlog=""
 while $running; do
-	echo -e "\n问题:"
-	read -r prompt
-	if [ "$prompt" == "q" ]; then
-		exit 0
-		# 输入jp: 翻译成日语
-	elif [[ "$prompt" =~ ^jp: ]]; then
-		jp_prompt="Translate this into japanese:$prompt"
-		prompt=$(echo "$jp_prompt" | sed 's/"/\\"/g')
-		# 输入en: 翻译成英文
-	elif [[ "$prompt" =~ ^en: ]]; then
-		en_prompt="Translate this into english:$prompt"
-		prompt=$(echo "$en_prompt" | sed 's/"/\\"/g')
-		# 输入cn: 翻译成中文
-	elif [[ "$prompt" =~ ^cn: ]]; then
-		cn_prompt="Translate this into chinese:$prompt"
-		prompt=$(echo "$cn_prompt" | sed 's/"/\\"/g')
-		# 通用
-	else
-		prompt=$(echo "$prompt" | sed 's/"/\\"/g')
-	fi
-	prompt=${prompt//$'\n'/' '}
-	response=$(curl https://api.openai.com/v1/completions \
-		-sS \
-		-H 'Content-Type: application/json' \
-		-H "Authorization: Bearer $API_KEY" \
-		-d '{
-  			"model": "'"$MODEL"'",
-  			"prompt": "'"${prompt}"'",
-  			"max_tokens": '$MAX_TOKENS',
-  			"temperature": '$TEMPERATURE',
-  			"best_of": '$BEST_OF',
-  			"top_p": '$TOP_P',
-  			"frequency_penalty": '$FREQUENCY_PENALTY',
-  			"presence_penalty": '$PRESENCE_PENALTY'
-			}')
-	Error "$response"
-	response_format=$(echo "$response" | jq -r '.choices[].text' | sed '1,2d; s/^A://g')
-	echo -e "\n\033[36m回答: \033[0m${response_format}"
+    echo -e "User: "
+    read -r prompt
+    if [ "$prompt" == "q" ]; then
+        exit 0
+        # 输入jp: 翻译成日语
+    elif [[ "$prompt" =~ ^jp: ]]; then
+        input=$(echo "$prompt" | grep -oP 'jp: \K.*')
+        content="{\"role\": \"system\", \"content\": \"You are a translator. Translate all text to japanese.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+        # 输入en: 翻译成英文
+    elif [[ "$prompt" =~ ^en: ]]; then
+        input=$(echo "$prompt" | grep -oP 'en: \K.*')
+        content="{\"role\": \"system\", \"content\": \"You are a translator. Translate all text to english.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+        # 输入cn: 翻译成中文
+    elif [[ "$prompt" =~ ^cn: ]]; then
+        input=$(echo "$prompt" | grep -oP 'cn: \K.*')
+        content="{\"role\": \"system\", \"content\": \"You are a senior programmer. Translate all text to chinese.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+    elif [[ "$prompt" =~ ^code: ]]; then
+        input=$(echo "$prompt" | grep -oP 'code: \K.*')
+        gptlog+="User: $input\n"
+        format_gptlog=$(echo "$gptlog" | sed -z 's/\n/\\n/g')
+        content="{\"role\": \"system\", \"content\": \"You are a senior programmer. Answer only with the code fence. Do not write explanations.\"}, {\"role\": \"user\", \"content\": \"$format_gptlog\"},"
+    elif [[ "$prompt" =~ ^ee ]]; then
+        $EDITOR "$RESULT"
+        running=false
+        exit 0
+        # 通用
+    else
+        input="$prompt"
+        gptlog+="User: $input\n"
+        format_gptlog=$(echo "$gptlog" | sed -z 's/\n/\\n/g')
+        content="{\"role\": \"system\", \"content\": \"YYou are now chatting with an AI assistant. Ask any questions you have!\"}, {\"role\": \"user\", \"content\": \"$format_gptlog\"},"
+    fi
+
+    raw_response=$(
+        curl -s -X POST $URL \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_KEY" \
+            -d "{\"model\": \"$ENGINE\", \"messages\": [${content%?}], \"temperature\": $TEMPERATURE, \"top_p\": $TOP_P, \"frequency_penalty\": $FREQUENCY_PENALTY, \"presence_penalty\": $PRESENCE_PENALTY}"
+    )
+
+    Error "$raw_response"
+    format_response=$(echo "$raw_response" | jq -r '.choices[0].message.content' | awk '{$1=$1};1')
+    echo -e "\n\033[36mChatGPT: \033[0m\n"
+    echo "$format_response" | bat --plain --color=always --language=markdown
+    gptlog+="ChatGPT: $format_response\n"
 done
