@@ -4,7 +4,7 @@
 
 ## 安装
 
-shell 脚本，直接下载编辑脚本，配置好 API key 就可食用.
+先安装 jq 和 bat 依赖，下载脚本，配置好 API key 就可食用。
 
 API key [申请地址](https://beta.openai.com/account/api-keys)
 
