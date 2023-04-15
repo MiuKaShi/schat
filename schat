@@ -19,11 +19,24 @@ echo -e "Exit with \033[36mq\033[0m."
 running=true
 
 # 错误info
-Error() {
+Check() {
     if echo "$1" | jq -e '.error' >/dev/null; then
-        echo -e "Error, you can try again\033[0;31m$(echo "$1" | jq -r '.error.type')\033[0m"
-        exit 1
+        echo -e "Error, try again\033[0;31m$(echo "$1" | jq -r '.error.type')\033[0m"
+        ((i++))
+    else
+        i=5
     fi
+}
+
+Translate() {
+    content="{\"role\": \"system\", \"content\": \"You are a translator assistant.\"}, {\"role\": \"assistant\", \"content\": \"Translate the following text into $language in a way that is faithful to the original text. But do not translate people and authors' names and surnames. Do not remove numbers. Return only the translation and nothing else.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+}
+
+callgpt() {
+    curl -s -X POST $URL \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $API_KEY" \
+        -d "{\"model\": \"$ENGINE\", \"messages\": [${content%?}], \"temperature\": $TEMPERATURE, \"top_p\": $TOP_P, \"frequency_penalty\": $FREQUENCY_PENALTY, \"presence_penalty\": $PRESENCE_PENALTY}"
 }
 
 gptlog=""
@@ -34,16 +47,19 @@ while $running; do
         exit 0
         # 输入jp: 翻译成日语
     elif [[ "$prompt" =~ ^jp: ]]; then
+        language="japanese"
         input=$(echo "$prompt" | grep -oP 'jp: \K.*')
-        content="{\"role\": \"system\", \"content\": \"You are a translator. Translate all text to japanese.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+        Translate
         # 输入en: 翻译成英文
     elif [[ "$prompt" =~ ^en: ]]; then
+        language="english"
         input=$(echo "$prompt" | grep -oP 'en: \K.*')
-        content="{\"role\": \"system\", \"content\": \"You are a translator. Translate all text to english.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+        Translate
         # 输入cn: 翻译成中文
     elif [[ "$prompt" =~ ^cn: ]]; then
+        language="chinese"
         input=$(echo "$prompt" | grep -oP 'cn: \K.*')
-        content="{\"role\": \"system\", \"content\": \"You are a senior programmer. Translate all text to chinese.\"}, {\"role\": \"user\", \"content\": \"$input\"},"
+        Translate
     elif [[ "$prompt" =~ ^code: ]]; then
         input=$(echo "$prompt" | grep -oP 'code: \K.*')
         gptlog+="User: $input\n"
@@ -58,17 +74,15 @@ while $running; do
         input="$prompt"
         gptlog+="User: $input\n"
         format_gptlog=$(echo "$gptlog" | sed -z 's/\n/\\n/g')
-        content="{\"role\": \"system\", \"content\": \"YYou are now chatting with an AI assistant. Ask any questions you have!\"}, {\"role\": \"user\", \"content\": \"$format_gptlog\"},"
+        content="{\"role\": \"system\", \"content\": \"You are now chatting with an AI assistant. Ask any questions you have!\"}, {\"role\": \"user\", \"content\": \"$format_gptlog\"},"
     fi
 
-    raw_response=$(
-        curl -s -X POST $URL \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $API_KEY" \
-            -d "{\"model\": \"$ENGINE\", \"messages\": [${content%?}], \"temperature\": $TEMPERATURE, \"top_p\": $TOP_P, \"frequency_penalty\": $FREQUENCY_PENALTY, \"presence_penalty\": $PRESENCE_PENALTY}"
-    )
+    i=0
+    while [ $i -lt 5 ]; do
+        raw_response=$(callgpt)
+        Check "$raw_response"
+    done
 
-    Error "$raw_response"
     format_response=$(echo "$raw_response" | jq -r '.choices[0].message.content' | awk '{$1=$1};1')
     echo -e "\n\033[36mChatGPT: \033[0m\n"
     echo "$format_response" | bat --plain --color=always --language=markdown
